@@ -10,25 +10,22 @@ local constants = require "octo.constants"
 ---@return glab_discussion[]
 local function fetch_mr_discussions(iid)
   local url_discussions = string.format("/projects/:id/merge_requests/%s/discussions", iid)
-  -- #244
-  -- local result = utils.aggregate_pages(output, X)
   local output = cli.run {
-    args = { "api", url_discussions },
+    args = { "api", "--paginate", url_discussions },
     mode = "sync",
   }
-  return vim.fn.json_decode(output)
+  return utils.get_flatten_pages(output)
 end
 
 ---@param iid string
 ---@return glab_note[]
 local function fetch_mr_pending_notes(iid)
   local url_pending_notes = string.format("/projects/:id/merge_requests/%s/draft_notes", iid)
-  -- #244
   local output = cli.run {
-    args = { "api", url_pending_notes },
+    args = { "api", "--paginate", url_pending_notes },
     mode = "sync",
   }
-  return vim.fn.json_decode(output)
+  return utils.get_flatten_pages(output)
 end
 
 ---Gitlab needs extra requests to resemble the graphql gh api.
@@ -74,13 +71,12 @@ end
 ---@param iid integer
 ---@return glab_diff
 local function fetch_mr_diff(iid)
-  local url = string.format("/projects/:id/merge_requests/%d/diffs?unidiff=true", iid)
+  local url = string.format("/projects/:id/merge_requests/%d/diffs?unidiff=true&per_page=30", iid)
   local output = cli.run {
-    -- #244: endpoint doesnt support the default per_page of 100, so it needs the extra `?per_page=30`
-    args = { "api", url },
+    args = { "api", "--paginate", url },
     mode = "sync",
   }
-  return vim.fn.json_decode(output)
+  return utils.get_flatten_pages(output)
 end
 
 ---@param file FileEntry
@@ -869,17 +865,16 @@ end
 ---@param pr PullRequest
 ---@param cb function
 function M.pr_get_changed_files(pr, cb)
-  local url = string.format("/projects/:id/merge_requests/%d/diffs", pr.number)
+  local url = string.format("/projects/:id/merge_requests/%d/diffs?per_page=30", pr.number)
   cli.run {
-    -- #244: endpoint doesnt support the default per_page of 100, so it needs the extra `?per_page=30`
-    args = { "api", url },
+    args = { "api", "--paginate", url },
     cb = function(output, stderr)
       if stderr and not utils.is_blank(stderr) then
         utils.error(stderr)
       elseif output then
         local FileEntry = require("octo.reviews.file-entry").FileEntry
         ---@type glab_diff[]
-        local results = vim.fn.json_decode(output)
+        local results = utils.get_flatten_pages(output)
         local files = {}
         for _, result in ipairs(results) do
           local additions, deletions, changes = generate_summary_from_diff(result.diff)
